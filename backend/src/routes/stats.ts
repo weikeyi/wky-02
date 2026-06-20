@@ -1,17 +1,27 @@
 import { Router } from 'express';
 import prisma from '../prisma';
-import { authMiddleware, requireRoles, UserRole } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { createObjectCsvWriter } from 'csv-writer';
 import path from 'path';
 import fs from 'fs';
+import { getCourseAccess, verifyAssignmentAccess } from '../middleware/courseAccess';
 
 const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/assignment/:assignmentId/dashboard', requireRoles('TEACHER', 'TA'), async (req, res) => {
+router.get('/assignment/:assignmentId/dashboard', async (req, res) => {
   try {
     const { assignmentId } = req.params;
+    const userId = req.user!.userId;
+
+    const { access } = await verifyAssignmentAccess(assignmentId, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isStaff) {
+      return res.status(403).json({ error: '权限不足' });
+    }
 
     const assignment = await prisma.assignment.findUnique({
       where: { id: assignmentId },
@@ -132,9 +142,18 @@ router.get('/assignment/:assignmentId/dashboard', requireRoles('TEACHER', 'TA'),
   }
 });
 
-router.get('/course/:courseId/stats', requireRoles('TEACHER', 'TA'), async (req, res) => {
+router.get('/course/:courseId/stats', async (req, res) => {
   try {
     const { courseId } = req.params;
+    const userId = req.user!.userId;
+
+    const access = await getCourseAccess(courseId, userId);
+    if (!access) {
+      return res.status(404).json({ error: '课程不存在或无权访问' });
+    }
+    if (!access.isStaff) {
+      return res.status(403).json({ error: '权限不足' });
+    }
 
     const course = await prisma.course.findUnique({
       where: { id: courseId },
@@ -203,9 +222,18 @@ router.get('/course/:courseId/stats', requireRoles('TEACHER', 'TA'), async (req,
   }
 });
 
-router.get('/assignment/:assignmentId/export', requireRoles('TEACHER'), async (req, res) => {
+router.get('/assignment/:assignmentId/export', async (req, res) => {
   try {
     const { assignmentId } = req.params;
+    const userId = req.user!.userId;
+
+    const { access } = await verifyAssignmentAccess(assignmentId, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isTeacher) {
+      return res.status(403).json({ error: '权限不足' });
+    }
 
     const assignment = await prisma.assignment.findUnique({
       where: { id: assignmentId },

@@ -140,6 +140,8 @@ export interface Appeal {
   assignment?: Assignment;
   submission?: Submission;
   taReviewer?: User;
+  courseName?: string;
+  courseCode?: string;
 }
 
 export interface AuditLog {

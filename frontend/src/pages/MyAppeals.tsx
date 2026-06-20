@@ -43,20 +43,35 @@ function MyAppeals() {
   };
 
   const fetchAllAppeals = async () => {
-    // 获取所有课程的申诉 - 这里简化处理
-    // 实际应该按课程筛选，这里先获取第一个作业的申诉作演示
     setLoading(true);
     try {
-      const courses = await api.get('/courses');
-      if (courses.data.length > 0) {
-        const assignments = await api.get(`/assignments/course/${courses.data[0].id}`);
-        if (assignments.data.length > 0) {
-          const response = await api.get(`/appeals/assignment/${assignments.data[0].id}`);
-          setAllAppeals(response.data);
+      const coursesResponse = await api.get('/courses');
+      const staffCourses = coursesResponse.data.filter((c: any) => {
+        const membership = c._count?.members > 0 || c.members?.length > 0 || c.teacherId === user?.id;
+        return membership;
+      });
+
+      const allAppealsPromises = staffCourses.map(async (course: any) => {
+        try {
+          const response = await api.get(`/appeals/course/${course.id}`);
+          return response.data.map((appeal: any) => ({
+            ...appeal,
+            courseName: course.name,
+            courseCode: course.code,
+          }));
+        } catch (e) {
+          return [];
         }
-      }
+      });
+
+      const results = await Promise.all(allAppealsPromises);
+      const all = results.flat().sort((a: any, b: any) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setAllAppeals(all);
     } catch (error) {
       console.error('获取申诉列表失败', error);
+      message.error('获取申诉列表失败');
     } finally {
       setLoading(false);
     }
@@ -90,6 +105,9 @@ function MyAppeals() {
             title={
               <Space>
                 {item.assignment?.title || '作业申诉'}
+                {item.courseName && (
+                  <Tag color="blue">{item.courseName}</Tag>
+                )}
                 <Tag color={statusColor[item.status]}>
                   {statusText[item.status]}
                 </Tag>

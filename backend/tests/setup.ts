@@ -11,12 +11,24 @@ const prisma = new PrismaClient();
 async function clearDatabase() {
   await prisma.$executeRawUnsafe('PRAGMA foreign_keys = OFF;');
   
-  const tablenames = await prisma.$queryRawUnsafe<{ name: string }[]>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma_%';"
-  );
+  const tableNames = [
+    'AuditLog',
+    'ReviewCriterionScore',
+    'RubricCriterion',
+    'Review',
+    'Appeal',
+    'Submission',
+    'Assignment',
+    'CourseMember',
+    'Course',
+    'User',
+  ];
   
-  for (const { name } of tablenames) {
-    await prisma.$executeRawUnsafe(`DELETE FROM "${name}";`);
+  for (const tableName of tableNames) {
+    try {
+      await prisma.$executeRawUnsafe(`DELETE FROM "${tableName}";`);
+    } catch (e) {
+    }
   }
   
   await prisma.$executeRawUnsafe('PRAGMA foreign_keys = ON;');

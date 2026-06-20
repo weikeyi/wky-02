@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import prisma from '../prisma';
-import { authMiddleware, requireRoles, UserRole } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { allocateReviews } from '../services/reviewAllocation';
 import { getAssignmentStatus } from '../services/assignmentStatus';
+import { getCourseAccess, verifyAssignmentAccess, requireCourseRole } from '../middleware/courseAccess';
 
 const router = Router();
 
@@ -102,7 +103,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', requireRoles('TEACHER'), async (req, res) => {
+router.post('/', requireCourseRole('TEACHER'), async (req, res) => {
   try {
     const {
       courseId,
@@ -128,10 +129,6 @@ router.post('/', requireRoles('TEACHER'), async (req, res) => {
     const course = await prisma.course.findUnique({ where: { id: courseId } });
     if (!course) {
       return res.status(404).json({ error: '课程不存在' });
-    }
-
-    if (course.teacherId !== req.user!.userId && req.user!.role !== 'TEACHER') {
-      return res.status(403).json({ error: '无权创建作业' });
     }
 
     const assignment = await prisma.assignment.create({
@@ -173,9 +170,10 @@ router.post('/', requireRoles('TEACHER'), async (req, res) => {
   }
 });
 
-router.put('/:id', requireRoles('TEACHER'), async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.userId;
     const {
       title,
       description,
@@ -193,17 +191,20 @@ router.put('/:id', requireRoles('TEACHER'), async (req, res) => {
       rubric,
     } = req.body;
 
+    const { access } = await verifyAssignmentAccess(id, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isTeacher) {
+      return res.status(403).json({ error: '无权修改' });
+    }
+
     const assignment = await prisma.assignment.findUnique({
       where: { id },
-      include: { course: true },
     });
 
     if (!assignment) {
       return res.status(404).json({ error: '作业不存在' });
-    }
-
-    if (assignment.course.teacherId !== req.user!.userId) {
-      return res.status(403).json({ error: '无权修改' });
     }
 
     const updateData: any = {};
@@ -256,21 +257,26 @@ router.put('/:id', requireRoles('TEACHER'), async (req, res) => {
   }
 });
 
-router.post('/:id/publish', requireRoles('TEACHER'), async (req, res) => {
+router.post('/:id/publish', async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.userId;
+
+    const { access } = await verifyAssignmentAccess(id, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isTeacher) {
+      return res.status(403).json({ error: '无权发布' });
+    }
 
     const assignment = await prisma.assignment.findUnique({
       where: { id },
-      include: { course: true, rubric: true },
+      include: { rubric: true },
     });
 
     if (!assignment) {
       return res.status(404).json({ error: '作业不存在' });
-    }
-
-    if (assignment.course.teacherId !== req.user!.userId) {
-      return res.status(403).json({ error: '无权发布' });
     }
 
     if (assignment.rubric.length === 0) {
@@ -289,13 +295,21 @@ router.post('/:id/publish', requireRoles('TEACHER'), async (req, res) => {
   }
 });
 
-router.post('/:id/allocate-reviews', requireRoles('TEACHER', 'TA'), async (req, res) => {
+router.post('/:id/allocate-reviews', async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.userId;
+
+    const { access } = await verifyAssignmentAccess(id, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isStaff) {
+      return res.status(403).json({ error: '无权分配互评' });
+    }
 
     const assignment = await prisma.assignment.findUnique({
       where: { id },
-      include: { course: true },
     });
 
     if (!assignment) {
@@ -311,22 +325,26 @@ router.post('/:id/allocate-reviews', requireRoles('TEACHER', 'TA'), async (req, 
   }
 });
 
-router.post('/:id/reopen', requireRoles('TEACHER'), async (req, res) => {
+router.post('/:id/reopen', async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.userId;
     const { newSubmissionDeadline, newReviewDeadline } = req.body;
+
+    const { access } = await verifyAssignmentAccess(id, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isTeacher) {
+      return res.status(403).json({ error: '无权操作' });
+    }
 
     const assignment = await prisma.assignment.findUnique({
       where: { id },
-      include: { course: true },
     });
 
     if (!assignment) {
       return res.status(404).json({ error: '作业不存在' });
-    }
-
-    if (assignment.course.teacherId !== req.user!.userId) {
-      return res.status(403).json({ error: '无权操作' });
     }
 
     const updateData: any = { status: 'REOPENED' };
@@ -350,21 +368,25 @@ router.post('/:id/reopen', requireRoles('TEACHER'), async (req, res) => {
   }
 });
 
-router.delete('/:id', requireRoles('TEACHER'), async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.userId;
+
+    const { access } = await verifyAssignmentAccess(id, userId);
+    if (!access) {
+      return res.status(404).json({ error: '作业不存在或无权访问' });
+    }
+    if (!access.isTeacher) {
+      return res.status(403).json({ error: '无权删除' });
+    }
 
     const assignment = await prisma.assignment.findUnique({
       where: { id },
-      include: { course: true },
     });
 
     if (!assignment) {
       return res.status(404).json({ error: '作业不存在' });
-    }
-
-    if (assignment.course.teacherId !== req.user!.userId) {
-      return res.status(403).json({ error: '无权删除' });
     }
 
     await prisma.assignment.delete({ where: { id } });

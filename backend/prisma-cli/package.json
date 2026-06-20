@@ -1,0 +1,8 @@
+{
+  "name": "prisma-wrapper",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "prisma": "./prisma.js"
+  }
+}

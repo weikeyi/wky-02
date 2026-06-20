@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../prisma';
-import { authMiddleware, requireRoles } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { verifyAssignmentAccess, getCourseAccess } from '../middleware/courseAccess';
 
 const router = Router();
@@ -23,6 +23,43 @@ router.get('/my', async (req, res) => {
             status: true,
           },
         },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json(appeals);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: '获取申诉列表失败' });
+  }
+});
+
+router.get('/course/:courseId', async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.user!.userId;
+
+    const access = await getCourseAccess(courseId, userId);
+    if (!access || !access.isStaff) {
+      return res.status(403).json({ error: '无权访问' });
+    }
+
+    const appeals = await prisma.appeal.findMany({
+      where: {
+        assignment: { courseId },
+      },
+      include: {
+        assignment: { select: { id: true, title: true } },
+        appellant: { select: { id: true, name: true, studentId: true, email: true } },
+        submission: {
+          select: {
+            id: true,
+            finalScore: true,
+            rawScore: true,
+            isLocked: true,
+          },
+        },
+        taReviewer: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
