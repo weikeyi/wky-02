@@ -1,9 +1,6 @@
-import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import { prisma, bcrypt } from './setup';
 import { allocateReviews } from '../src/services/reviewAllocation';
 import { calculateSubmissionScore, calculateFinalScore } from '../src/services/scoring';
-
-const prisma = new PrismaClient();
 
 describe('Review Allocation', () => {
   let teacher: any;
@@ -101,10 +98,6 @@ describe('Review Allocation', () => {
         },
       });
     }
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
   });
 
   test('should allocate reviews correctly', async () => {
@@ -283,10 +276,6 @@ describe('Score Calculation', () => {
         });
       }
     }
-  });
-
-  afterAll(async () => {
-    await prisma.$disconnect();
   });
 
   test('should calculate average score with drop highest lowest', async () => {

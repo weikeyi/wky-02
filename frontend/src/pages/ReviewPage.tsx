@@ -65,15 +65,21 @@ function ReviewPage() {
   const handleReview = (review: Review) => {
     setCurrentReview(review);
 
-    const scores = review.criterionScores.map((cs) => ({
-      criterionId: cs.criterionId,
-      score: cs.score,
-      comment: cs.comment,
-    }));
+    const rubric = assignment?.rubric || [];
+    const existingScores = review.criterionScores || [];
+
+    const scores = rubric.map((criterion) => {
+      const existing = existingScores.find((s) => s.criterionId === criterion.id);
+      return {
+        criterionId: criterion.id,
+        score: existing?.score ?? null,
+        comment: existing?.comment ?? '',
+      };
+    });
 
     form.setFieldsValue({
       scores,
-      overallComment: review.overallComment,
+      overallComment: review.overallComment || '',
     });
 
     setModalVisible(true);

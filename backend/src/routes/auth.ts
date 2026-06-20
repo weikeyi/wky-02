@@ -54,10 +54,14 @@ router.post('/login', async (req, res) => {
 
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, name, role, studentId } = req.body;
+    const { username, email, password, name, studentId } = req.body;
 
     if (!username || !email || !password || !name) {
       return res.status(400).json({ error: '请填写所有必填项' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: '密码长度至少6位' });
     }
 
     const existingUser = await prisma.user.findFirst({
@@ -68,11 +72,16 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: '用户名或邮箱已存在' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    if (studentId) {
+      const existingStudent = await prisma.user.findUnique({
+        where: { studentId },
+      });
+      if (existingStudent) {
+        return res.status(400).json({ error: '学号已存在' });
+      }
+    }
 
-    const userRole = (role && Object.values(UserRoleValues).includes(role as UserRole))
-      ? role as UserRole
-      : UserRoleValues.STUDENT;
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -80,7 +89,7 @@ router.post('/register', async (req, res) => {
         email,
         password: hashedPassword,
         name,
-        role: userRole,
+        role: 'STUDENT',
         studentId: studentId || null,
       },
     });
@@ -90,6 +99,8 @@ router.post('/register', async (req, res) => {
       username: user.username,
       role: user.role as UserRole,
     });
+
+    await auditLog(req, 'REGISTER', 'User', user.id);
 
     res.status(201).json({
       token,

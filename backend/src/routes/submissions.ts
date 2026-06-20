@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import prisma from '../prisma';
-import { authMiddleware, requireRoles, UserRole } from '../middleware/auth';
-import { calculateLateMinutes } from '../services/assignmentStatus';
+import { authMiddleware, requireRoles } from '../middleware/auth';
+import { getAssignmentStatus, calculateLateMinutes } from '../services/assignmentStatus';
 import { calculateFinalScore } from '../services/scoring';
+import { verifyAssignmentAccess } from '../middleware/courseAccess';
 
 const router = Router();
 
@@ -162,6 +163,20 @@ router.post('/assignment/:assignmentId', async (req, res) => {
       return res.status(404).json({ error: '作业不存在' });
     }
 
+    const { access } = await verifyAssignmentAccess(assignmentId, studentId);
+    if (!access || !access.isStudent) {
+      return res.status(403).json({ error: '无权提交此作业' });
+    }
+
+    const currentStatus = getAssignmentStatus(assignment);
+    if (currentStatus !== 'SUBMISSION' && currentStatus !== 'REOPENED') {
+      return res.status(400).json({ error: '当前阶段不允许提交' });
+    }
+
+    if (!content && !attachmentUrl) {
+      return res.status(400).json({ error: '提交内容不能为空' });
+    }
+
     const now = new Date();
     const isLate = now > assignment.submissionDeadline;
 
@@ -179,7 +194,7 @@ router.post('/assignment/:assignmentId', async (req, res) => {
     }
 
     const lateMinutes = isLate
-      ? await calculateLateMinutes(assignment.submissionDeadline, now)
+      ? Math.ceil((now.getTime() - assignment.submissionDeadline.getTime()) / (1000 * 60))
       : 0;
 
     const status = isLate ? 'LATE' : 'SUBMITTED';

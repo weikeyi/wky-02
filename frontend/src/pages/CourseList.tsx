@@ -16,7 +16,9 @@ function CourseList() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [enrollModalVisible, setEnrollModalVisible] = useState(false);
   const [form] = Form.useForm();
+  const [enrollForm] = Form.useForm();
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -48,16 +50,19 @@ function CourseList() {
     }
   };
 
-  const handleEnroll = async (courseCode: string) => {
+  const handleEnroll = async (values: any) => {
     try {
-      const courses = await api.get('/courses');
-      const targetCourse = courses.data.find((c: Course) => c.code === courseCode);
+      const { courseCode } = values;
+      const allCourses = await api.get('/courses');
+      const targetCourse = allCourses.data.find((c: Course) => c.code === courseCode);
       if (!targetCourse) {
         message.error('课程不存在');
         return;
       }
       await api.post(`/courses/${targetCourse.id}/enroll`);
       message.success('选课成功');
+      setEnrollModalVisible(false);
+      enrollForm.resetFields();
       fetchCourses();
     } catch (error: any) {
       message.error(error.response?.data?.error || '选课失败');
@@ -87,26 +92,7 @@ function CourseList() {
           {user?.role === 'STUDENT' && (
             <Button
               icon={<PlusOutlined />}
-              onClick={() => {
-                Modal.confirm({
-                  title: '加入课程',
-                  content: (
-                    <Form form={Form.useForm()[0]} layout="vertical">
-                      <Form.Item
-                        name="courseCode"
-                        label="课程代码"
-                        rules={[{ required: true, message: '请输入课程代码' }]}
-                      >
-                        <Input placeholder="请输入课程代码" />
-                      </Form.Item>
-                    </Form>
-                  ),
-                  onOk: async () => {
-                    const form = Form.useFormInstance();
-                    // 简化处理
-                  },
-                });
-              }}
+              onClick={() => setEnrollModalVisible(true)}
             >
               加入课程
             </Button>
@@ -211,6 +197,31 @@ function CourseList() {
               <Button onClick={() => setModalVisible(false)}>取消</Button>
               <Button type="primary" htmlType="submit">
                 创建
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="加入课程"
+        open={enrollModalVisible}
+        onCancel={() => setEnrollModalVisible(false)}
+        footer={null}
+      >
+        <Form form={enrollForm} layout="vertical" onFinish={handleEnroll}>
+          <Form.Item
+            name="courseCode"
+            label="课程代码"
+            rules={[{ required: true, message: '请输入课程代码' }]}
+          >
+            <Input placeholder="请输入课程代码" />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => setEnrollModalVisible(false)}>取消</Button>
+              <Button type="primary" htmlType="submit">
+                加入
               </Button>
             </Space>
           </Form.Item>

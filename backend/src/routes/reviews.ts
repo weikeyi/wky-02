@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import prisma from '../prisma';
-import { authMiddleware, requireRoles, UserRole } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { validateRubricScores } from '../services/reviewAllocation';
 import { calculateFinalScore } from '../services/scoring';
+import { getAssignmentStatus } from '../services/assignmentStatus';
+import { verifyAssignmentAccess } from '../middleware/courseAccess';
 
 const router = Router();
 
@@ -216,6 +218,11 @@ router.post('/:id/submit', async (req, res) => {
 
     if (review.status === 'COMPLETED') {
       return res.status(400).json({ error: '已提交的互评无法再次提交' });
+    }
+
+    const assignmentStatus = getAssignmentStatus(review.submission.assignment);
+    if (assignmentStatus !== 'PEER_REVIEW' && assignmentStatus !== 'REOPENED') {
+      return res.status(400).json({ error: '当前阶段不允许提交互评' });
     }
 
     const rubricCount = review.submission.assignment.rubric.length;

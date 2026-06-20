@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../prisma';
-import { authMiddleware, requireRoles, UserRole } from '../middleware/auth';
+import { authMiddleware, requireRoles } from '../middleware/auth';
+import { verifyAssignmentAccess, getCourseAccess } from '../middleware/courseAccess';
 
 const router = Router();
 
@@ -33,9 +34,15 @@ router.get('/my', async (req, res) => {
   }
 });
 
-router.get('/assignment/:assignmentId', requireRoles('TEACHER', 'TA'), async (req, res) => {
+router.get('/assignment/:assignmentId', async (req, res) => {
   try {
     const { assignmentId } = req.params;
+    const userId = req.user!.userId;
+
+    const { access } = await verifyAssignmentAccess(assignmentId, userId);
+    if (!access || !access.isStaff) {
+      return res.status(403).json({ error: '无权访问' });
+    }
 
     const appeals = await prisma.appeal.findMany({
       where: { assignmentId },
@@ -73,7 +80,6 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user!.userId;
-    const userRole = req.user!.role;
 
     const appeal = await prisma.appeal.findUnique({
       where: { id },
@@ -104,21 +110,24 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: '申诉不存在' });
     }
 
+    const { access } = await verifyAssignmentAccess(appeal.assignmentId, userId);
+
     const isOwner = appeal.appellantId === userId;
-    const isCourseStaff = userRole === 'TEACHER' || userRole === 'TA';
+    const isCourseStaff = access?.isStaff || false;
 
     if (!isOwner && !isCourseStaff) {
       return res.status(403).json({ error: '无权访问' });
     }
 
+    const result: any = { ...appeal };
     if (appeal.assignment.anonymousReview && !isCourseStaff && !isOwner) {
-      appeal.submission.reviews = appeal.submission.reviews.map((r: any) => ({
+      result.submission.reviews = appeal.submission.reviews.map((r: any) => ({
         ...r,
         reviewer: { id: r.reviewer.id, name: '匿名评审' },
       }));
     }
 
-    res.json(appeal);
+    res.json(result);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: '获取申诉详情失败' });
@@ -148,12 +157,21 @@ router.post('/submission/:submissionId', async (req, res) => {
       return res.status(404).json({ error: '提交不存在' });
     }
 
+    const { access } = await verifyAssignmentAccess(submission.assignmentId, appellantId);
+    if (!access) {
+      return res.status(403).json({ error: '无权访问此作业' });
+    }
+
     if (submission.studentId !== appellantId) {
       return res.status(403).json({ error: '只能对自己的作业发起申诉' });
     }
 
     if (submission.finalScore === null) {
       return res.status(400).json({ error: '成绩尚未公布，无法申诉' });
+    }
+
+    if (submission.isLocked) {
+      return res.status(400).json({ error: '成绩已锁定，无法申诉' });
     }
 
     const existingAppeal = await prisma.appeal.findFirst({
@@ -188,7 +206,7 @@ router.post('/submission/:submissionId', async (req, res) => {
   }
 });
 
-router.put('/:id/review', requireRoles('TA', 'TEACHER'), async (req, res) => {
+router.put('/:id/review', async (req, res) => {
   try {
     const { id } = req.params;
     const taReviewerId = req.user!.userId;
@@ -200,6 +218,11 @@ router.put('/:id/review', requireRoles('TA', 'TEACHER'), async (req, res) => {
 
     if (!appeal) {
       return res.status(404).json({ error: '申诉不存在' });
+    }
+
+    const { access } = await verifyAssignmentAccess(appeal.assignmentId, taReviewerId);
+    if (!access || !access.isStaff) {
+      return res.status(403).json({ error: '无权处理此申诉' });
     }
 
     if (appeal.status === 'RESOLVED' || appeal.status === 'REJECTED') {
@@ -224,7 +247,7 @@ router.put('/:id/review', requireRoles('TA', 'TEACHER'), async (req, res) => {
   }
 });
 
-router.post('/:id/resolve', requireRoles('TA', 'TEACHER'), async (req, res) => {
+router.post('/:id/resolve', async (req, res) => {
   try {
     const { id } = req.params;
     const taReviewerId = req.user!.userId;
@@ -241,11 +264,24 @@ router.post('/:id/resolve', requireRoles('TA', 'TEACHER'), async (req, res) => {
       return res.status(404).json({ error: '申诉不存在' });
     }
 
+    const { access } = await verifyAssignmentAccess(appeal.assignmentId, taReviewerId);
+    if (!access || !access.isStaff) {
+      return res.status(403).json({ error: '无权处理此申诉' });
+    }
+
     if (appeal.status === 'RESOLVED' || appeal.status === 'REJECTED') {
       return res.status(400).json({ error: '申诉已处理' });
     }
 
+    if (appeal.submission.isLocked) {
+      return res.status(400).json({ error: '成绩已锁定，无法处理' });
+    }
+
     const finalStatus = status || 'RESOLVED';
+
+    if (finalStatus === 'RESOLVED' && (taScore === undefined || taScore === null)) {
+      return res.status(400).json({ error: '请提供复核分数' });
+    }
 
     const finalScore = finalStatus === 'RESOLVED' && taScore !== undefined
       ? taScore

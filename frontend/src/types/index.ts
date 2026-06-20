@@ -44,6 +44,11 @@ export interface RubricCriterion {
   order: number;
 }
 
+export interface AssignmentCount {
+  submissions: number;
+  appeals: number;
+}
+
 export interface Assignment {
   id: string;
   courseId: string;
@@ -65,6 +70,7 @@ export interface Assignment {
   userSubmission?: Submission | null;
   userReviewCount?: number;
   createdAt: string;
+  _count?: AssignmentCount;
 }
 
 export type SubmissionStatus =
